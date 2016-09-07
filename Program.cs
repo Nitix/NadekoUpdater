@@ -1,19 +1,23 @@
 ﻿using System;
+using System.Globalization;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using System.IO.Compression;
 using System.Threading;
 using System.IO;
+using NadekoUpdater.json;
 
-namespace ConsoleApplication
+
+//Add in poject.json new tunrimes for ubuntu, osx and so on
+namespace NadekoUpdater
 {
     public class Program
     {
-        public static DateTime LastUpdate { get; set; }
+        private static DateTime LastUpdate { get; set; }
+
         public static void Main(string[] args)
         {
-
             MainAsync().Wait();
             WriteLine("***PROGRAM ENDED***", ConsoleColor.Red);
             Console.ReadKey();
@@ -25,14 +29,14 @@ namespace ConsoleApplication
 
             while (true)
             {
-            DateTime lastUpdate;
-            if (!File.Exists("../version.txt"))
-                File.WriteAllText("../version.txt", "");
-            if (!DateTime.TryParse(File.ReadAllText("../version.txt"), out lastUpdate))
-                lastUpdate = DateTime.MinValue;
-            LastUpdate = lastUpdate;
-            WriteLine("........................................");
-            System.Console.WriteLine("Current version release date: " + LastUpdate);
+                DateTime lastUpdate;
+                if (!File.Exists("../version.txt"))
+                    File.WriteAllText("../version.txt", "");
+                if (!DateTime.TryParse(File.ReadAllText("../version.txt"), out lastUpdate))
+                    lastUpdate = DateTime.MinValue;
+                LastUpdate = lastUpdate;
+                WriteLine("........................................");
+                Console.WriteLine("Current version release date: " + LastUpdate);
                 WriteLine("PICK AN OPTION: (type 1-3)", ConsoleColor.Magenta);
                 WriteLine("1. Check for newest stable release.", ConsoleColor.Magenta);
                 WriteLine("2. Check for any newest release.", ConsoleColor.Magenta);
@@ -44,26 +48,32 @@ namespace ConsoleApplication
                     break;
                 try
                 {
-                    if (input == "1")
+                    switch (input)
                     {
-                        WriteLine("Getting data...");
-                        var data = await GetReleaseData("https://api.github.com/repos/Kwoth/NadekoBot/releases/latest");
-                        if (ConfirmReleaseUpdate(data))
-                            await Update(data);
-                        continue;
-                    }
-                    if (input == "2")
-                    {
-                        WriteLine("Getting data...");
-                        var data = await GetReleaseData("https://api.github.com/repos/Kwoth/NadekoBot/releases", true);
-                        if (ConfirmReleaseUpdate(data))
-                            await Update(data);
-                        continue;
+                        case "1":
+                        {
+                            WriteLine("Getting data...");
+                            var data = await GetReleaseData("https://api.github.com/repos/Kwoth/NadekoBot/releases/latest");
+                            if (ConfirmReleaseUpdate(data))
+                                await Update(data);
+                            break;
+                        }
+                        case "2":
+                        {
+                            WriteLine("Getting data...");
+                            var data = await GetReleaseData("https://api.github.com/repos/Kwoth/NadekoBot/releases", true);
+                            if (ConfirmReleaseUpdate(data))
+                                await Update(data);
+                            break;
+                        }
+                        default:
+                            WriteLine("Unknown option, please try again");
+                            break;
                     }
                 }
                 catch (Exception ex)
                 {
-                    System.Console.WriteLine($"Unable to sync. {ex.Message}");
+                    Console.WriteLine($"Unable to sync. {ex.Message}");
                 }
             }
         }
@@ -75,7 +85,9 @@ namespace ConsoleApplication
                 WriteLine("You already have an up-to-date version!", ConsoleColor.Red);
                 return false;
             }
-            WriteLine("Newer version found!\n\nAre you sure you want to update? (y or n)\n\n Your current version will be backed up to NadekoBot_old folder. Always check the github release page to see if credentials or config files need updating", ConsoleColor.Magenta);
+            WriteLine(
+                "Newer version found!\n\nAre you sure you want to update? (y or n)\n\nYour current version will be backed up to NadekoBot_old folder. Always check the github release page to see if credentials or config files need updating",
+                ConsoleColor.Magenta);
             return Console.ReadLine().ToLower() == "y" || Console.ReadLine().ToLower() == "yes";
         }
 
@@ -84,34 +96,32 @@ namespace ConsoleApplication
             WriteLine("........................................");
             try
             {
-                using (var httpClient = new HttpClient())
-                using (var cancelSource = new CancellationTokenSource())
+                var cancelSource = new CancellationTokenSource();
+                var cancelToken = cancelSource.Token;
+                var waitTask = Task.Run(async () => await Waiter(cancelToken));
+                Console.WriteLine("Downloading. Be patient. There is no need to open an issue if it takes long.");
+                var downloader = new Downloader(data);
+                var arch = await downloader.Download();
+                cancelSource.Cancel();
+                await waitTask;
+                if (Directory.Exists("../NadekoBot"))
                 {
-                    var cancelToken = cancelSource.Token;
-                    var waitTask = Task.Run(async () => await Waiter(cancelToken));
-                    Console.WriteLine("Downloading. Be patient. There is no need to open an issue if it takes long.");
-                    var stream = await httpClient.GetStreamAsync(data.Assets[0].DownloadLink);
-                    var arch = new ZipArchive(stream);
-                    cancelSource.Cancel();
-                    await waitTask;
-                    
-                    if (Directory.Exists("../NadekoBot"))
+                    WriteLine("Backing up old version...", ConsoleColor.DarkYellow);
+                    if (Directory.Exists("../NadekobBot_old"))
                     {
-                        WriteLine("Backing up old version...", ConsoleColor.DarkYellow);
-                        if (Directory.Exists("../NadekobBot_old"))
-                        {
-                            Directory.Delete("../NadekoBot_old", true);
-                        }
-                        DirectoryCopy(@"../NadekoBot", @"../NadekoBot_old", true);
+                        Directory.Delete("../NadekoBot_old", true);
                     }
-                    WriteLine("Saving...", ConsoleColor.Green);
-                    arch.ExtractToDirectory(@"../NadekoBot_new");
-                    DirectoryCopy(@"../NadekoBot_new",@"../NadekoBot",true);
-                    
-                    File.WriteAllText("../version.txt", data.PublishedAt.ToString());
-                    Directory.Delete(@"../NadekoBot_new", true);
-                    WriteLine("Done!");
+                    DirectoryCopy(@"../NadekoBot", @"../NadekoBot_old", true);
                 }
+                WriteLine("Saving...", ConsoleColor.Green);
+                arch.ExtractToDirectory(@"../NadekoBot_new");
+                DirectoryCopy(@"../NadekoBot_new", @"../NadekoBot", true);
+
+                File.WriteAllText("../version.txt", data.PublishedAt.ToString(CultureInfo.InvariantCulture));
+                Directory.Delete(@"../NadekoBot_new", true);
+                arch.Dispose();
+                WriteLine("Done!");
+                
             }
             catch (Exception ex)
             {
@@ -119,25 +129,23 @@ namespace ConsoleApplication
             }
         }
 
-        public static async Task<GithubReleaseModel> GetReleaseData(string link, bool prerelease = false)
+        private static async Task<GithubReleaseModel> GetReleaseData(string link, bool prerelease = false)
         {
             using (HttpClient client = new HttpClient())
             {
                 client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/vnd.github.v3+json");
-                client.DefaultRequestHeaders.TryAddWithoutValidation("user-agent", "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0)");
+                client.DefaultRequestHeaders.TryAddWithoutValidation("user-agent",
+                    "Mozilla/5.0 (Windows NT 10.0; WOW64; Trident/7.0; rv:11.0)");
 
                 var response = await client.GetStringAsync(link);
-                GithubReleaseModel release;
-                if(!prerelease)
-                    release = JsonConvert.DeserializeObject<GithubReleaseModel>(response);
-                else
-                    release = JsonConvert.DeserializeObject<GithubReleaseModel>(Newtonsoft.Json.Linq.JArray.Parse(response)[0].ToString());
-                Console.WriteLine($"\tReleased At: {release.PublishedAt}\n\tVersion: {release.VersionName}\n\tLink: {release.Assets[0].DownloadLink}");
+                var release = JsonConvert.DeserializeObject<GithubReleaseModel>(!prerelease ? response : Newtonsoft.Json.Linq.JArray.Parse(response)[0].ToString());
+                Console.WriteLine(
+                    $"\tReleased At: {release.PublishedAt}\n\tVersion: {release.VersionName}\n\tLink: {release.Assets[0].DownloadLink}");
                 return release;
             }
         }
 
-        public static void Write(string text, ConsoleColor clr = ConsoleColor.White)
+        private static void Write(string text, ConsoleColor clr = ConsoleColor.White)
         {
             var oldClr = Console.ForegroundColor;
             Console.ForegroundColor = clr;
@@ -145,12 +153,12 @@ namespace ConsoleApplication
             Console.ForegroundColor = oldClr;
         }
 
-        public static void WriteLine(string text, ConsoleColor clr = ConsoleColor.White)
+        private static void WriteLine(string text, ConsoleColor clr = ConsoleColor.White)
         {
             Write(text + Environment.NewLine, clr);
         }
 
-        public static async Task Waiter(CancellationToken cancel)
+        private static async Task Waiter(CancellationToken cancel)
         {
             try
             {
@@ -179,7 +187,6 @@ namespace ConsoleApplication
             catch (OperationCanceledException)
             {
                 WriteLine("Download complete.");
-                return; // 👌
             }
         }
 
@@ -221,25 +228,4 @@ namespace ConsoleApplication
             }
         }
     }
-    public class GithubReleaseModel
-    {
-
-        [JsonPropertyAttribute("published_at")]
-        public DateTime PublishedAt { get; set; }
-
-        [JsonPropertyAttribute("tag_name")]
-        public String VersionName { get; set; }
-
-        [JsonPropertyAttribute("body")]
-        public String PatchNotes { get; set; }
-
-        public Asset[] Assets { get; set; }
-
-        public class Asset
-        {
-            [JsonPropertyAttribute("browser_download_url")]
-            public string DownloadLink { get; set; }
-        }
-    }
-
 }
