@@ -9,12 +9,11 @@ using System.IO;
 using NadekoUpdater.json;
 
 
-//Add in poject.json new tunrimes for ubuntu, osx and so on
 namespace NadekoUpdater
 {
     public class Program
     {
-        private static DateTime LastUpdate { get; set; }
+        private static Version LastUpdate { get; set; }
 
         public static void Main(string[] args)
         {
@@ -29,14 +28,18 @@ namespace NadekoUpdater
 
             while (true)
             {
-                DateTime lastUpdate;
                 if (!File.Exists("../version.txt"))
+                {
                     File.WriteAllText("../version.txt", "");
-                if (!DateTime.TryParse(File.ReadAllText("../version.txt"), out lastUpdate))
-                    lastUpdate = DateTime.MinValue;
-                LastUpdate = lastUpdate;
+                    LastUpdate = Version.DefaultVersion;
+                }
+                else
+                {
+                    var ver = File.ReadAllText("../version.txt");
+                    LastUpdate = ver == "" ? Version.DefaultVersion : new Version(File.ReadAllText("../version.txt"));
+                }
                 WriteLine("........................................");
-                Console.WriteLine("Current version release date: " + LastUpdate);
+                Console.WriteLine("Current version release: " + LastUpdate);
                 WriteLine("PICK AN OPTION: (type 1-3)", ConsoleColor.Magenta);
                 WriteLine("1. Check for newest stable release.", ConsoleColor.Magenta);
                 WriteLine("2. Check for any newest release.", ConsoleColor.Magenta);
@@ -80,7 +83,7 @@ namespace NadekoUpdater
 
         private static bool ConfirmReleaseUpdate(GithubReleaseModel data)
         {
-            if (data.PublishedAt <= LastUpdate)
+            if (new Version(data.VersionName).CompareTo(LastUpdate) <= 0)
             {
                 WriteLine("You already have an up-to-date version!", ConsoleColor.Red);
                 return false;
@@ -117,7 +120,7 @@ namespace NadekoUpdater
                 arch.ExtractToDirectory(@"../NadekoBot_new");
                 DirectoryCopy(@"../NadekoBot_new", @"../NadekoBot", true);
 
-                File.WriteAllText("../version.txt", data.PublishedAt.ToString(CultureInfo.InvariantCulture));
+                File.WriteAllText("../version.txt", data.VersionName);
                 Directory.Delete(@"../NadekoBot_new", true);
                 arch.Dispose();
                 WriteLine("Done!");
@@ -170,13 +173,7 @@ namespace NadekoUpdater
                     Write("/");
                     Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
                     await Task.Delay(333, cancel);
-                    Write("--");
-                    Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-                    await Task.Delay(333, cancel);
-                    Write("\\");
-                    Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
-                    await Task.Delay(333, cancel);
-                    Write("--");
+                    Write("-");
                     Console.SetCursorPosition(Console.CursorLeft - 1, Console.CursorTop);
                     await Task.Delay(333, cancel);
                     Write("\\");
